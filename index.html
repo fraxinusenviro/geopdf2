@@ -26,6 +26,22 @@
       </div>
     </div>
     <script>
+      // Unregister any stale service workers — a cached SW from a previous production build
+      // served on the same origin will intercept requests and return stale files, causing a
+      // blank page even after code changes. This ensures a clean slate on every load.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(r) { r.unregister(); });
+        });
+        // Also clear all caches so the next load fetches fresh assets
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k); });
+          });
+        }
+      }
+    </script>
+    <script>
       // Catch any top-level JS errors and display them
       window.addEventListener('error', function(e) {
         var el = document.getElementById('js-error');
