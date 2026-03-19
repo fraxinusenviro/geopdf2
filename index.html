@@ -42,15 +42,31 @@
       }
     </script>
     <script>
-      // Catch any top-level JS errors and display them
+      // Show errors in a persistent banner that survives React mounting/unmounting.
+      // Appends to document.body so it exists regardless of #root content.
+      function showError(msg) {
+        var b = document.getElementById('__err_banner');
+        if (!b) {
+          b = document.createElement('div');
+          b.id = '__err_banner';
+          b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fca5a5;padding:10px 14px;font-family:monospace;font-size:12px;white-space:pre-wrap;overflow:auto;max-height:40vh;';
+          document.body.appendChild(b);
+        }
+        b.textContent += msg + '\n';
+      }
       window.addEventListener('error', function(e) {
-        var el = document.getElementById('js-error');
-        if (el) { el.style.display = 'block'; el.textContent = 'Error: ' + e.message + ' (' + e.filename + ':' + e.lineno + ')'; }
+        showError('Error: ' + e.message + '\n  at ' + e.filename + ':' + e.lineno);
       });
       window.addEventListener('unhandledrejection', function(e) {
-        var el = document.getElementById('js-error');
-        if (el) { el.style.display = 'block'; el.textContent = 'Promise error: ' + (e.reason?.message || e.reason); }
+        var r = e.reason;
+        showError('Unhandled rejection: ' + (r && r.stack ? r.stack : (r && r.message ? r.message : String(r))));
       });
+      // Timeout: if React hasn't mounted after 8s, show a hint
+      setTimeout(function() {
+        if (document.getElementById('js-fallback')) {
+          showError('Timeout: React did not mount after 8s. Check browser console (F12) for module loading errors.');
+        }
+      }, 8000);
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

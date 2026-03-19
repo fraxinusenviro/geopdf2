@@ -56,4 +56,9 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  optimizeDeps: {
+    // pdfjs-dist is a webpack bundle; Vite's esbuild pre-bundler breaks it.
+    // Serve it directly from node_modules and use ?url for the worker path.
+    exclude: ['pdfjs-dist'],
+  },
 })
