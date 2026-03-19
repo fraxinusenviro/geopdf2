@@ -12,9 +12,14 @@
 
 import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import workerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import type { MapRegistration, ImportedMap } from '@/types'
 import { gcpsToAffine } from './affine'
-// PDF.js worker is configured in main.tsx at app startup
+
+// Configure the PDF.js worker once when this chunk is first evaluated.
+// This module is only reachable via lazy-loaded components (MapViewer, ImportMapSheet),
+// so it always runs after React has mounted on the main bundle.
+pdfjs.GlobalWorkerOptions.workerSrc = workerSrc
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 

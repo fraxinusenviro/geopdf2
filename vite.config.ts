@@ -61,4 +61,17 @@ export default defineConfig({
     // Serve it directly from node_modules and use ?url for the worker path.
     exclude: ['pdfjs-dist'],
   },
+  build: {
+    // Explicit transpile target ensures iOS Safari 14+ compatibility.
+    target: ['es2020', 'chrome87', 'safari14'],
+    rollupOptions: {
+      output: {
+        // Pin pdfjs-dist to a stable named chunk so the service worker can
+        // cache it across deployments independently of MapViewer changes.
+        manualChunks: (id) => {
+          if (id.includes('pdfjs-dist')) return 'pdfjs'
+        },
+      },
+    },
+  },
 })

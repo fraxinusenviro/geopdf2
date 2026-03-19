@@ -1,13 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import * as pdfjs from 'pdfjs-dist'
-import workerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
 
-// Configure PDF.js worker once at app startup
-pdfjs.GlobalWorkerOptions.workerSrc = workerSrc
+// pdfjs-dist is now configured in src/lib/geopdf.ts, which is only reachable
+// through lazy-loaded chunks (MapViewer, ImportMapSheet). This keeps the main
+// bundle free of the ~650 KB pdfjs library so iOS Safari can parse it.
 
 // In dev mode, unregister any lingering service workers from previous production builds.
 // A cached SW on the same origin will intercept dev server requests and serve stale files.
