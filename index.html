@@ -17,7 +17,25 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Fallback shown if React fails to mount -->
+      <div id="js-fallback" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#94a3b8;font-family:sans-serif;font-size:14px;flex-direction:column;gap:12px;">
+        <div style="font-size:24px;">⚙</div>
+        <div>Loading GeoPDF Viewer…</div>
+        <div id="js-error" style="color:#f87171;font-size:12px;max-width:400px;text-align:center;display:none;"></div>
+      </div>
+    </div>
+    <script>
+      // Catch any top-level JS errors and display them
+      window.addEventListener('error', function(e) {
+        var el = document.getElementById('js-error');
+        if (el) { el.style.display = 'block'; el.textContent = 'Error: ' + e.message + ' (' + e.filename + ':' + e.lineno + ')'; }
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('js-error');
+        if (el) { el.style.display = 'block'; el.textContent = 'Promise error: ' + (e.reason?.message || e.reason); }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

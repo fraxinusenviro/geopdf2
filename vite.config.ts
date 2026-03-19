@@ -50,9 +50,6 @@ export default defineConfig({
       '@': '/src',
     },
   },
-  optimizeDeps: {
-    exclude: ['pdfjs-dist'],
-  },
   worker: {
     format: 'es',
   },
