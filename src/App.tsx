@@ -13,14 +13,13 @@ import { useTrackStore } from '@/store/trackStore'
 
 export const App: React.FC = () => {
   const activeSheet = useUiStore((s) => s.activeSheet)
-  const drawerOpen = useUiStore((s) => s.drawerOpen)
 
-  // Bootstrap data from IndexedDB on first load
   const loadMapsFromDb = useMapStore((s) => s.loadMapsFromDb)
   const loadWaypoints = useWaypointStore((s) => s.loadWaypoints)
   const loadOverlays = useWaypointStore((s) => s.loadOverlays)
   const loadTracks = useTrackStore((s) => s.loadTracks)
 
+  // Bootstrap data from IndexedDB on first load
   useEffect(() => {
     loadMapsFromDb()
     loadWaypoints()
@@ -30,25 +29,19 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-900 overflow-hidden">
-      {/* Top bar */}
       <TopBar />
 
-      {/* Main content row */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Left drawer */}
+      <div className="flex flex-1 overflow-hidden relative min-h-0">
         <LeftDrawer />
 
-        {/* Map + right toolbar */}
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-1 relative overflow-hidden min-w-0">
           <MapViewer />
           <RightToolbar />
         </div>
       </div>
 
-      {/* Bottom bar */}
       <BottomBar />
 
-      {/* Bottom sheets / modals */}
       {activeSheet === 'import-map' && <ImportMapSheet />}
       {activeSheet === 'waypoint-editor' && <WaypointEditorSheet />}
     </div>

@@ -29,7 +29,6 @@ import { loadMapFile } from '@/lib/db'
 import { ensureProjection, pdfPointToLatLon, latLonToPdfPoint } from '@/lib/coordinates'
 
 const DPR = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
-// Render at screen DPR for sharpness, capped at 2
 const RENDER_DPR = Math.min(DPR, 2)
 
 export const MapViewer: React.FC = () => {
@@ -59,9 +58,17 @@ export const MapViewer: React.FC = () => {
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [addingWaypoint, setAddingWaypoint] = useState(false)
 
-  // Activate pan/zoom gestures
+  // ── Canvas render scale ────────────────────────────────────────────────────
+  // Defined early so it's available in all callbacks and effects below.
+
+  const renderScale = useMemo(
+    () => Math.max(0.5, Math.min(4, viewTransform.scale * RENDER_DPR)),
+    [viewTransform.scale],
+  )
+
+  // ── Pan / zoom / rotate gestures ──────────────────────────────────────────
+
   usePanZoom({ containerRef: viewportRef, northUpLocked })
 
   // ── Load PDF when active map changes ──────────────────────────────────────
@@ -75,7 +82,6 @@ export const MapViewer: React.FC = () => {
 
     setIsLoading(true)
     setError(null)
-
     let cancelled = false
 
     ;(async () => {
@@ -92,12 +98,10 @@ export const MapViewer: React.FC = () => {
 
         setPdfPage(page)
 
-        // Ensure CRS projection is loaded
         if (activeMap.registration?.crs) {
           await ensureProjection(activeMap.registration.crs)
         }
 
-        // Fit to viewport
         fitMapToViewport(page, containerRef.current)
       } catch (err) {
         if (!cancelled) {
@@ -113,37 +117,33 @@ export const MapViewer: React.FC = () => {
 
   function fitMapToViewport(page: PDFPageProxy, container: HTMLDivElement | null): void {
     if (!container) return
-    const viewport = page.getViewport({ scale: 1 })
-    const cw = container.clientWidth
-    const ch = container.clientHeight
-    const scale = Math.min(cw / viewport.width, ch / viewport.height) * 0.9
-    const panX = (cw - viewport.width * scale) / 2
-    const panY = (ch - viewport.height * scale) / 2
+    const vp = page.getViewport({ scale: 1 })
+    const cw = container.clientWidth || window.innerWidth
+    const ch = container.clientHeight || window.innerHeight
+    const scale = Math.min(cw / vp.width, ch / vp.height) * 0.9
+    const panX = (cw - vp.width * scale) / 2
+    const panY = (ch - vp.height * scale) / 2
     setViewTransform({ scale, panX, panY, rotation: 0 })
   }
 
   // ── GPS follow mode ───────────────────────────────────────────────────────
 
+  const renderScaleRef = useRef(renderScale)
+  useEffect(() => { renderScaleRef.current = renderScale }, [renderScale])
+
   useEffect(() => {
     if (!followGps || !gpsPosition || !activeMap?.registration || !containerRef.current) return
-
     const reg = activeMap.registration
-    const { pdfX, pdfY } = latLonToPdfPoint(
-      gpsPosition.lat, gpsPosition.lon, reg,
-    )
-    const canvasPx_x = pdfX * renderScale
-    const canvasPx_y = (reg.pageHeightPt - pdfY) * renderScale
-
+    const { pdfX, pdfY } = latLonToPdfPoint(gpsPosition.lat, gpsPosition.lon, reg)
+    const canvasPxX = pdfX * renderScaleRef.current
+    const canvasPxY = (reg.pageHeightPt - pdfY) * renderScaleRef.current
     const cw = containerRef.current.clientWidth
     const ch = containerRef.current.clientHeight
-
-    // Centre the GPS position in the viewport
     setViewTransform({
-      panX: cw / 2 - canvasPx_x * viewTransform.scale,
-      panY: ch / 2 - canvasPx_y * viewTransform.scale,
+      panX: cw / 2 - canvasPxX * viewTransform.scale,
+      panY: ch / 2 - canvasPxY * viewTransform.scale,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gpsPosition, followGps])
+  }, [gpsPosition, followGps]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cursor coordinate tracking ────────────────────────────────────────────
 
@@ -153,21 +153,17 @@ export const MapViewer: React.FC = () => {
       const rect = viewportRef.current.getBoundingClientRect()
       const localX = (e.clientX - rect.left) / viewTransform.scale
       const localY = (e.clientY - rect.top) / viewTransform.scale
-      const pdfX = localX / renderScale
-      const pdfY = activeMap.registration.pageHeightPt - localY / renderScale
+      const pdfX = localX / renderScaleRef.current
+      const pdfY = activeMap.registration.pageHeightPt - localY / renderScaleRef.current
       const { lat, lon } = pdfPointToLatLon(pdfX, pdfY, activeMap.registration)
-      if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-        setCursorLatLon({ lat, lon })
-      }
+      if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) setCursorLatLon({ lat, lon })
     },
     [activeMap, viewTransform.scale, setCursorLatLon],
   )
 
-  const handleMouseLeave = useCallback(() => {
-    setCursorLatLon(null)
-  }, [setCursorLatLon])
+  const handleMouseLeave = useCallback(() => setCursorLatLon(null), [setCursorLatLon])
 
-  // ── Right-click / long-press waypoint placement ───────────────────────────
+  // ── Right-click waypoint placement ────────────────────────────────────────
 
   const handleContextMenu = useCallback(
     async (e: React.MouseEvent<HTMLDivElement>) => {
@@ -176,10 +172,9 @@ export const MapViewer: React.FC = () => {
       const rect = viewportRef.current.getBoundingClientRect()
       const localX = (e.clientX - rect.left) / viewTransform.scale
       const localY = (e.clientY - rect.top) / viewTransform.scale
-      const pdfX = localX / renderScale
-      const pdfY = activeMap.registration.pageHeightPt - localY / renderScale
+      const pdfX = localX / renderScaleRef.current
+      const pdfY = activeMap.registration.pageHeightPt - localY / renderScaleRef.current
       const { lat, lon } = pdfPointToLatLon(pdfX, pdfY, activeMap.registration)
-
       const wp = await addWaypoint({
         name: `Waypoint ${new Date().toLocaleTimeString()}`,
         description: '',
@@ -195,23 +190,13 @@ export const MapViewer: React.FC = () => {
     [activeMap, viewTransform.scale, addWaypoint, setEditingWaypointId, openSheet],
   )
 
-  // ── Canvas-space render scale ─────────────────────────────────────────────
-
-  const renderScale = useMemo(() => {
-    // Render at a resolution that gives ~72 PPI at the current view scale,
-    // but clamp between 0.5 and 4 to avoid memory issues.
-    return Math.max(0.5, Math.min(4, viewTransform.scale * RENDER_DPR))
-  }, [viewTransform.scale])
-
   const handleCanvasReady = useCallback((w: number, h: number) => {
     setCanvasSize({ w, h })
   }, [])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (!activeMap) {
-    return <EmptyState />
-  }
+  if (!activeMap) return <EmptyState />
 
   return (
     <div
@@ -229,17 +214,11 @@ export const MapViewer: React.FC = () => {
           transformOrigin: '0 0',
           transform: `translate(${viewTransform.panX}px, ${viewTransform.panY}px) scale(${viewTransform.scale}) rotate(${viewTransform.rotation}deg)`,
           willChange: 'transform',
-          cursor: addingWaypoint ? 'crosshair' : 'grab',
+          cursor: 'grab',
         }}
       >
-        {/* PDF canvas */}
-        <PDFCanvas
-          page={pdfPage}
-          renderScale={renderScale}
-          onCanvasReady={handleCanvasReady}
-        />
+        <PDFCanvas page={pdfPage} renderScale={renderScale} onCanvasReady={handleCanvasReady} />
 
-        {/* Vector overlays */}
         {activeMap.registration && canvasSize.w > 0 && (
           <VectorOverlayCanvas
             overlays={overlays.filter((o) => o.visible)}
@@ -250,7 +229,6 @@ export const MapViewer: React.FC = () => {
           />
         )}
 
-        {/* SVG overlay (GPS, waypoints, tracks) */}
         {activeMap.registration && canvasSize.w > 0 && (
           <SVGOverlay
             registration={activeMap.registration}
@@ -269,29 +247,32 @@ export const MapViewer: React.FC = () => {
         )}
       </div>
 
-      {/* Loading spinner */}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/70 z-50">
           <div className="text-center">
-            <div className="w-12 h-12 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <div className="w-12 h-12 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-blue-300 text-sm">Loading map…</p>
           </div>
         </div>
       )}
 
-      {/* Error state */}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center z-50">
           <div className="bg-red-900/80 text-red-200 rounded-xl p-6 max-w-sm text-center mx-4">
             <p className="font-semibold mb-1">Failed to load map</p>
             <p className="text-sm opacity-80">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="mt-3 text-xs px-3 py-1 bg-red-700/60 hover:bg-red-600 rounded-lg transition-colors"
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}
 
-      {/* No geospatial registration banner */}
-      {activeMap && !activeMap.registration && !isLoading && !error && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-amber-800/90 text-amber-200 text-xs px-3 py-1.5 rounded-full shadow-lg">
+      {!activeMap.registration && !isLoading && !error && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-amber-800/90 text-amber-200 text-xs px-3 py-1.5 rounded-full shadow-lg pointer-events-none">
           ⚠ No geospatial registration found — GPS overlay unavailable
         </div>
       )}
@@ -299,13 +280,15 @@ export const MapViewer: React.FC = () => {
   )
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+
 const EmptyState: React.FC = () => {
   const openSheet = useUiStore((s) => s.openSheet)
   const setActivePanel = useUiStore((s) => s.setActivePanel)
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400">
-      <svg viewBox="0 0 64 64" className="w-20 h-20 mb-4 opacity-30">
+      <svg viewBox="0 0 64 64" className="w-20 h-20 mb-4 opacity-30" aria-hidden="true">
         <rect width="64" height="64" rx="10" fill="none" stroke="currentColor" strokeWidth="2" />
         <path d="M12 16 L32 8 L52 16 L52 48 L32 56 L12 48 Z" stroke="currentColor" strokeWidth="2" fill="none" />
         <circle cx="32" cy="28" r="6" stroke="currentColor" strokeWidth="2" fill="none" />
@@ -313,7 +296,7 @@ const EmptyState: React.FC = () => {
       </svg>
       <h2 className="text-xl font-semibold text-slate-300 mb-2">No map selected</h2>
       <p className="text-sm mb-6 text-center max-w-xs">
-        Import a GeoPDF to get started, or open the map library to select a previously imported map.
+        Import a GeoPDF to get started, or choose a previously imported map from the library.
       </p>
       <div className="flex gap-3">
         <button

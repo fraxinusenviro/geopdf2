@@ -46,11 +46,13 @@ export const LeftDrawer: React.FC = () => {
       {/* Drawer */}
       <aside
         className={cn(
-          'fixed left-0 top-12 bottom-10 w-72 bg-slate-900 border-r border-slate-700/50',
-          'flex flex-col z-30 transition-transform duration-200 ease-in-out',
-          drawerOpen ? 'translate-x-0' : '-translate-x-full',
-          'lg:relative lg:top-0 lg:bottom-0',
-          drawerOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full',
+          'w-72 bg-slate-900 border-r border-slate-700/50 flex flex-col z-30',
+          'transition-all duration-200 ease-in-out shrink-0',
+          // Mobile: fixed overlay
+          'fixed left-0 top-12 bottom-10 lg:static lg:top-auto lg:bottom-auto',
+          // Show/hide via transform on mobile; on desktop show/hide via width
+          drawerOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+          !drawerOpen && 'lg:w-0 lg:border-r-0 lg:overflow-hidden',
         )}
         aria-label="Map library and data"
       >

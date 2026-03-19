@@ -14,12 +14,7 @@ import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { MapRegistration, ImportedMap } from '@/types'
 import { gcpsToAffine } from './affine'
-
-// Set up PDF.js worker (Vite copies this via optimizeDeps exclusion)
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.mjs',
-  import.meta.url,
-).href
+// PDF.js worker is configured in main.tsx at app startup
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 

@@ -3,30 +3,41 @@
  * Provides live position, heading, and screen wake lock during recording.
  */
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import type { GpsPosition } from '@/types'
 import { useUiStore } from '@/store/uiStore'
 import { useTrackStore } from '@/store/trackStore'
-import { useMapStore } from '@/store/mapStore'
 
+// ── Module-level shared GPS state ─────────────────────────────────────────────
+
+let gpsPosition: GpsPosition | null = null
+const positionListeners = new Set<(pos: GpsPosition | null) => void>()
+let watchId: number | null = null
 let wakeLock: WakeLockSentinel | null = null
 
+function notifyListeners(pos: GpsPosition | null): void {
+  gpsPosition = pos
+  positionListeners.forEach((fn) => fn(pos))
+}
+
 async function acquireWakeLock(): Promise<void> {
-  if ('wakeLock' in navigator) {
+  if ('wakeLock' in navigator && !wakeLock) {
     try {
       wakeLock = await navigator.wakeLock.request('screen')
     } catch {
-      // Wake lock not critical
+      // Not critical
     }
   }
 }
 
 async function releaseWakeLock(): Promise<void> {
   if (wakeLock) {
-    await wakeLock.release()
+    try { await wakeLock.release() } catch { /* ignore */ }
     wakeLock = null
   }
 }
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 interface UseGpsReturn {
   position: GpsPosition | null
@@ -34,54 +45,24 @@ interface UseGpsReturn {
   stopGps: () => void
 }
 
-let gpsPosition: GpsPosition | null = null
-const positionListeners = new Set<(pos: GpsPosition | null) => void>()
-
-// Module-level GPS state (shared across hook instances)
-let watchId: number | null = null
-let refCount = 0
-
-function notifyListeners(pos: GpsPosition | null): void {
-  gpsPosition = pos
-  positionListeners.forEach((fn) => fn(pos))
-}
-
 export function useGps(): UseGpsReturn {
+  const [position, setPosition] = useState<GpsPosition | null>(gpsPosition)
+
   const setGpsStatus = useUiStore((s) => s.setGpsStatus)
   const addTrackPoint = useTrackStore((s) => s.addTrackPoint)
   const isRecording = useTrackStore((s) => s.isRecording)
   const recordingInterval = useTrackStore((s) => s.recordingInterval)
-  const followGps = useMapStore((s) => s.followGps)
-  const setViewTransform = useMapStore((s) => s.setViewTransform)
 
-  const posRef = useRef<GpsPosition | null>(gpsPosition)
-  const forceUpdate = useCallback(() => {
-    // We need a re-render mechanism; use a simple state approach
-  }, [])
-
-  const onPosition = useCallback(
-    (pos: GpsPosition | null) => {
-      posRef.current = pos
-    },
-    [],
-  )
-
-  useEffect(() => {
-    positionListeners.add(onPosition)
-    return () => {
-      positionListeners.delete(onPosition)
-    }
-  }, [onPosition])
-
-  // Last track point timestamp for interval filtering
   const lastTrackTs = useRef<number>(0)
 
+  // Subscribe to module-level GPS state
   useEffect(() => {
-    const unsubscribeGps = subscribeToGps((pos) => {
-      if (!pos) return
-      posRef.current = pos
+    const listener = (pos: GpsPosition | null) => {
+      setPosition(pos)
 
-      // Track recording with interval filter
+      if (!pos) return
+
+      // Track recording interval filter
       if (isRecording) {
         const now = pos.timestamp
         if (now - lastTrackTs.current >= recordingInterval * 1000) {
@@ -89,22 +70,26 @@ export function useGps(): UseGpsReturn {
           lastTrackTs.current = now
         }
       }
-    })
+    }
 
-    return unsubscribeGps
+    positionListeners.add(listener)
+    // Deliver current position immediately
+    if (gpsPosition) listener(gpsPosition)
+
+    return () => { positionListeners.delete(listener) }
   }, [isRecording, recordingInterval, addTrackPoint])
 
   const startGps = useCallback((): void => {
-    if (!navigator.geolocation) {
-      setGpsStatus('error', 'Geolocation not supported by this browser')
+    if (!('geolocation' in navigator)) {
+      setGpsStatus('error', 'Geolocation not supported')
+      return
+    }
+    if (watchId !== null) {
+      setGpsStatus('active')
       return
     }
 
     setGpsStatus('requesting')
-    refCount++
-
-    if (watchId !== null) return
-
     acquireWakeLock()
 
     watchId = navigator.geolocation.watchPosition(
@@ -126,31 +111,19 @@ export function useGps(): UseGpsReturn {
         setGpsStatus('error', err.message)
         notifyListeners(null)
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     )
   }, [setGpsStatus])
 
   const stopGps = useCallback((): void => {
-    refCount = Math.max(0, refCount - 1)
-    if (refCount === 0 && watchId !== null) {
+    if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId)
       watchId = null
-      notifyListeners(null)
-      setGpsStatus('off')
-      releaseWakeLock()
     }
+    notifyListeners(null)
+    setGpsStatus('off')
+    releaseWakeLock()
   }, [setGpsStatus])
 
-  return { position: posRef.current, startGps, stopGps }
-}
-
-function subscribeToGps(cb: (pos: GpsPosition | null) => void): () => void {
-  positionListeners.add(cb)
-  // Immediately call with current position
-  if (gpsPosition) cb(gpsPosition)
-  return () => positionListeners.delete(cb)
+  return { position, startGps, stopGps }
 }
